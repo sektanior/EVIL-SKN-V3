@@ -1879,72 +1879,79 @@ function handshakelocation {
         fi
         if [ "$handshakeloc" = "" ]; then
                 echo
-	echo -e "handshake location  (Example: /root/handshakes/$red$Host_SSID-$Host_MAC.cap$transparent)"
-	echo -e "Press ${yellow}ENTER$transparent to skip"
-	echo
-	echo -n "Path: "
-	
-	
-	
-	
-	 if [ "$SKN_AUTO" = "0" ];then
+                echo -e "handshake location  (Example: $red$WORK_DIR.cap$transparent)"
+                echo -e "Press ${yellow}ENTER$transparent to skip"
+                echo
+                echo -ne "Path: "
+
+                if [ "$SKN_AUTO" = "0" ];then
                         read handshakeloc
                 fi
-	fi
-		if [ "$handshakeloc" = "" ]; then
-			deauthforce
-		else
-			if [ -f "$handshakeloc" ]; then
-				Host_SSID_loc=$(pyrit -r "$handshakeloc" analyze 2>&1 | grep "^#" | cut -d "(" -f2 | cut -d "'" -f2)
-				Host_MAC_loc=$(pyrit -r "$handshakeloc" analyze 2>&1 | grep "^#" | cut -d " " -f3 | tr '[:lower:]' '[:upper:]')
-				if [[ "$Host_MAC_loc" == *"$Host_MAC"* ]] && [[ "$Host_SSID_loc" == *"$Host_SSID"* ]]; then
-					if pyrit -r $handshakeloc analyze 2>&1 | sed -n /$(echo $Host_MAC | tr '[:upper:]' '[:lower:]')/,/^#/p | grep -vi "AccessPoint" | grep -qi "good,"; then
-						cp "$handshakeloc" $DUMP_PATH/$Host_MAC-01.cap
-						 certssl
-					else
-					echo "Corrupted handshake"
-					echo
-					sleep 4
-					echo "you can try aircrack-ng"
-					echo "You want to try to aircrack-ng instead of pyrit to check the handshake? [ENTER = NO]"
-					echo
 
-					read handshakeloc_aircrack
-					echo -ne "$transparent"
-					if [ "$handshakeloc_aircrack" = "" ]; then
-						handshakelocation
-					else
-						if aircrack-ng $handshakeloc | grep -q "1 handshake"; then
-							cp "$handshakeloc" $DUMP_PATH/$Host_MAC-01.cap
-							certssl
-						else
-							echo "Corrupted handshake"
-							sleep 4
-							handshakelocation
-						fi
-					fi
-					fi
-				else
-					echo -e "${red}$general_error_1$transparent!"
-					echo
-					echo -e "File ${red}MAC$transparent"
+        fi
+                if [ "$handshakeloc" = "" ]; then
+                        deauthforce
+                else
+                        if [ -f "$handshakeloc" ]; then
+                                pyrit -r "$handshakeloc" analyze &>$mortal_output_device
+                                pyrit_broken=$?
 
-					readarray -t lista_loc < <(pyrit -r $handshakeloc analyze 2>&1 | grep "^#")
-						for i in "${lista_loc[@]}"; do
-							echo -e "$green $(echo $i | cut -d " " -f1) $yellow$(echo $i | cut -d " " -f3 | tr '[:lower:]' '[:upper:]')$transparent ($green $(echo $i | cut -d "(" -f2 | cut -d "'" -f2)$transparent)"
-						done
+                                if [ $pyrit_broken = 0 ]; then
+                                Host_SSID_loc=$(pyrit -r "$handshakeloc" analyze 2>&1 | grep "^#" | cut -d "(" -f2 | cut -d "'" -f2)
+                                Host_MAC_loc=$(pyrit -r "$handshakeloc" analyze 2>&1 | grep "^#" | cut -d " " -f3 | tr '[:lower:]' '[:upper:]')
+                                else
+                                        Host_SSID_loc=$(timeout -s SIGKILL 3 aircrack-ng "$handshakeloc" | grep WPA | grep '1 handshake' | awk '{print $3}')
+                                        Host_MAC_loc=$(timeout -s SIGKILL 3 aircrack-ng "$handshakeloc" | grep WPA | grep '1 handshake' | awk '{print $2}')
+                                fi
 
-					echo -e "Host ${green}MAC$transparent"
-					echo -e "$green #1: $yellow$Host_MAC$transparent ($green $Host_SSID$transparent)"
-					sleep 7
-					handshakelocation
-				fi
-			else
-				echo -e "File ${red}NOT$transparent present"
-				sleep 4
-				handshakelocation
-			fi
-		fi
+
+                                if [[ "$Host_MAC_loc" == *"$Host_MAC"* ]] && [[ "$Host_SSID_loc" == *"$Host_SSID"* ]]; then
+                                        if [ $pyrit_broken = 0 ] && pyrit -r $handshakeloc analyze 2>&1 | sed -n /$(echo $Host_MAC | tr '[:upper:]' '[:lower:]')/,/^#/p | grep -vi "AccessPoint" | grep -qi "good,"; then
+                                                cp "$handshakeloc" $DUMP_PATH/$Host_MAC-01.cap
+                                                certssl
+                                        else
+                                        echo -e $yellow "Corrupted handshake" $transparent
+                                        echo
+                                        sleep 2
+                                        echo "Do you want to try aicrack-ng instead of pyrit to verify the handshake? [ENTER = NO]"
+                                        echo
+
+                                        read handshakeloc_aircrack
+                                        echo -ne "$transparent"
+                                        if [ "$handshakeloc_aircrack" = "" ]; then
+                                                handshakelocation
+                                        else
+                                                if timeout -s SIGKILL 3 aircrack-ng $handshakeloc | grep -q "1 handshake"; then
+                                                        cp "$handshakeloc" $DUMP_PATH/$Host_MAC-01.cap
+                                                        certssl
+                                                else
+                                                        echo "Corrupted handshake"
+                                                        sleep 2
+                                                        handshakelocation
+                                                fi
+                                        fi
+                                        fi
+                                else
+                                        echo -e "${red}$general_error_1$transparent!"
+                                        echo
+                                        echo -e "File ${red}MAC$transparent"
+
+                                        readarray -t lista_loc < <(pyrit -r $handshakeloc analyze 2>&1 | grep "^#")
+                                                for i in "${lista_loc[@]}"; do
+                                                        echo -e "$green $(echo $i | cut -d " " -f1) $yellow$(echo $i | cut -d " " -f3 | tr '[:lower:]' '[:upper:]')$transparent ($green $(echo $i | cut -d "(" -f2 | cut -d "'" -f2)$transparent)"
+                                                done
+
+                                        echo -e "Host ${green}MAC$transparent"
+                                        echo -e "$green #1: $yellow$Host_MAC$transparent ($green $Host_SSID$transparent)"
+                                        sleep 7
+                                        handshakelocation
+                                fi
+                        else
+                                echo -e "File ${red}NOT$transparent present"
+                                sleep 2
+                                handshakelocation
+                        fi
+                fi
 }
 
 
